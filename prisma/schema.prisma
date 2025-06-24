@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+model AgeVerificationConfig {
+  id                Int      @id @default(autoincrement())
+  enabled           Boolean  @default(false)
+  popupTrigger      String   @default("checkout")
+  minimumAge        Int      @default(18)
+  eSignatureEnabled Boolean  @default(true)
+  idUploadEnabled   Boolean  @default(true)
+  emailEnabled      Boolean  @default(true)
+  emailTrigger      String   @default("after_popup")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Verification {
+  id               String   @id @default(uuid())
+  customer         String
+  orderDetails     String
+  verificationId   String   @unique
+  ageSubmitted     Int
+  idType           String
+  status           String   @default("Pending")
+  verificationDate String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model EmailTemplateSetting {
+  id           Int      @id @default(autoincrement())
+  type         String
+  subject      String?
+  preview      String?
+  body         String?
+  note         String?
+  description  String?
+  instructions String?
+  privacyNote  String?
+  maxFileSize  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
