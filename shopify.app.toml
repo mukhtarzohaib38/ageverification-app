@@ -3,7 +3,7 @@
 client_id = "7dc756e7937aaad0183dbf53ddd22415"
 name = "ageverification"
 handle = "ageverification-1"
-application_url = "https://punk-beaches-haiti-hollywood.trycloudflare.com"
+application_url = "https://normal-racks-trout-heading.trycloudflare.com"
 embedded = true
 
 [build]
@@ -26,7 +26,7 @@ api_version = "2025-04"
 scopes = "write_products"
 
 [auth]
-redirect_urls = ["https://punk-beaches-haiti-hollywood.trycloudflare.com/auth/callback", "https://punk-beaches-haiti-hollywood.trycloudflare.com/auth/shopify/callback", "https://punk-beaches-haiti-hollywood.trycloudflare.com/api/auth/callback"]
+redirect_urls = ["https://normal-racks-trout-heading.trycloudflare.com/auth/callback", "https://normal-racks-trout-heading.trycloudflare.com/auth/shopify/callback", "https://normal-racks-trout-heading.trycloudflare.com/api/auth/callback"]
 
 [pos]
 embedded = false

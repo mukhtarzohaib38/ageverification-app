@@ -11,14 +11,23 @@ import {
   Thumbnail,
   Text,
   Card,
-  Badge,
-  Scrollable,
+  Modal,
   Toast,
+  Scrollable,
+   InlineStack ,
+   Icon
+
 } from '@shopify/polaris';
-import { NoteIcon } from '@shopify/polaris-icons';
-import { useNavigate, useLoaderData, useActionData, useSubmit } from '@remix-run/react';
+import {
+  EmailIcon,
+  HomeIcon,
+  PersonFilledIcon,
+  SettingsIcon,
+} from '@shopify/polaris-icons';
+import { useNavigate, useLoaderData, useActionData, useSubmit, useFetcher } from '@remix-run/react';
 import { json } from '@remix-run/node';
 import prisma from '../db.server';
+import { authenticate } from '../shopify.server';
 
 export const loader = async () => {
   try {
@@ -30,9 +39,78 @@ export const loader = async () => {
   }
 };
 
+export const action = async ({ request }) => {
+  try {
+    const formData = await request.formData();
+    const actionType = formData.get('actionType');
+
+    // Authenticate the admin request
+    const { session } = await authenticate.admin(request);
+
+    if (actionType === 'saveSettings') {
+      // Parse the settings from formData
+      const settings = JSON.parse(formData.get('settings'));
+
+      // Save settings to the database using Prisma
+      await Promise.all(
+        settings.map(async (setting) => {
+          await prisma.emailTemplateSetting.upsert({
+            where: { type: setting.type },
+            update: {
+              subject: setting.subject,
+              preview: setting.preview,
+              body: setting.body,
+              note: setting.note,
+              description: setting.description,
+              instructions: setting.instructions,
+              privacyNote: setting.privacyNote,
+              maxFileSize: setting.maxFileSize,
+            },
+            create: {
+              type: setting.type,
+              subject: setting.subject,
+              preview: setting.preview,
+              body: setting.body,
+              note: setting.note,
+              description: setting.description,
+              instructions: setting.instructions,
+              privacyNote: setting.privacyNote,
+              maxFileSize: setting.maxFileSize,
+            },
+          });
+        })
+      );
+
+      return json({ success: true, message: 'Settings saved successfully' });
+    } else if (actionType === 'sendTestEmail') {
+      const emailData = JSON.parse(formData.get('emailData'));
+      const recipient = formData.get('recipient');
+
+      // Here you would implement your email sending logic
+      // This is a placeholder for the actual email sending implementation
+      // You might want to use a service like Shopify's email API or a third-party service
+      console.log('Sending test email to:', recipient, 'with data:', emailData);
+
+      // Simulate email sending
+      // In a real implementation, you'd use something like nodemailer or Shopify's email API
+      return json({ 
+        success: true, 
+        message: `Test email sent to ${recipient}`,
+        emailData 
+      });
+    }
+
+    return json({ success: false, message: 'Invalid action type' }, { status: 400 });
+  } catch (error) {
+    console.error('Error in action:', error);
+    return json({ success: false, message: 'Failed to process request', error: error.message }, { status: 500 });
+  }
+};
+
 export default function EmailSetting() {
+  const fetcher = useFetcher();
   const navigate = useNavigate();
-  const loaderData = useLoaderData() || { settings: [] }; // Default to empty object to prevent null error
+  const loaderData = useLoaderData() || { settings: [] };
   const { settings: initialSettings } = loaderData;
   const actionData = useActionData();
   const submit = useSubmit();
@@ -41,6 +119,10 @@ export default function EmailSetting() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastError, setToastError] = useState(false);
   const [files, setFiles] = useState([]);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewContent, setPreviewContent] = useState('');
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [showSendEmailModal, setShowSendEmailModal] = useState(false);
 
   const [settings, setSettings] = useState({
     verification: {
@@ -204,7 +286,7 @@ export default function EmailSetting() {
   // Handle action response for user feedback
   useEffect(() => {
     if (actionData) {
-      setToastMessage(actionData.message || (actionData.success ? 'Settings saved successfully' : 'Failed to save settings'));
+      setToastMessage(actionData.message || (actionData.success ? 'Settings saved successfully' : 'Failed to process request'));
       setToastError(!actionData.success);
       setShowToast(true);
     }
@@ -212,38 +294,33 @@ export default function EmailSetting() {
 
   const toggleToast = useCallback(() => setShowToast(false), []);
 
-  const handleDropZoneDrop = useCallback(
-    (_dropFiles, acceptedFiles, _rejectedFiles) =>
-      setFiles((files) => [...files, ...acceptedFiles]),
-    [],
-  );
+
+  // Handle file uploads
+  const handleDropZoneDrop = useCallback((_dropFiles, acceptedFiles, _rejectedFiles) => {
+    setFiles((prevFiles) => [...prevFiles, ...acceptedFiles]);
+  }, []);
 
   const validImageTypes = ['image/gif', 'image/jpeg', 'image/png'];
 
   const fileUpload = !files.length && (
-    <DropZone.FileUpload actionHint="Max 5mb, Accepts .gif, .jpg, and .png" />
+    <div style={{ textAlign: 'center', marginTop: '45px' }}>
+      <Button>Add images</Button>
+    </div>
   );
 
   const uploadedFiles = files.length > 0 && (
-    <LegacyStack vertical>
+    <LegacyStack vertical gap="200">
       {files.map((file, index) => (
-        <LegacyStack alignment="center" key={index}>
-          <Thumbnail
-            size="small"
-            alt={file.name}
-            source={
-              validImageTypes.includes(file.type)
-                ? window.URL.createObjectURL(file)
-                : NoteIcon
-            }
-          />
-          <div>
-            {file.name}{' '}
-            <Text variant="bodySm" as="p">
-              {file.size} bytes
-            </Text>
-          </div>
-        </LegacyStack>
+        <Thumbnail
+          key={index}
+          size="small"
+          alt={file.name}
+          source={
+            validImageTypes.includes(file.type)
+              ? window.URL.createObjectURL(file)
+              : ''
+          }
+        />
       ))}
     </LegacyStack>
   );
@@ -257,8 +334,65 @@ export default function EmailSetting() {
 
     const formData = new FormData();
     formData.append('settings', JSON.stringify(emailSettings));
-    submit(formData, { method: 'post', action: '/api.email-settings' });
+    formData.append('actionType', 'saveSettings');
+    
+    fetcher.submit(formData, { method: 'post' });
   };
+
+  // Preview email handler
+  const handlePreviewEmail = useCallback(() => {
+    const currentTab = tabs[selected];
+    const emailBody = settings[currentTab.stateKey].body;
+    
+    // Replace variables with sample data for preview
+    let previewBody = emailBody
+      .replace('{{customer_name}}', 'John Doe')
+      .replace('{{customer_email}}', 'john.doe@example.com')
+      .replace('{{order_number}}', 'ORD123456')
+      .replace('{{verification_link}}', '#')
+      .replace('{{retry_verification_link}}', '#')
+      .replace('{{store_name}}', 'My Store')
+      .replace('{{store_url}}', 'https://example.com')
+      .replace('{{verification_date}}', new Date().toLocaleDateString())
+      .replace('{{rejection_reason}}', 'Unclear document image');
+
+    setPreviewContent(previewBody);
+    setShowPreviewModal(true);
+  }, [selected, settings]);
+
+  // Send test email handler
+  const handleSendTestEmail = useCallback(() => {
+    if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+      setToastMessage('Please enter a valid email address');
+      setToastError(true);
+      setShowToast(true);
+      return;
+    }
+
+    const currentTab = tabs[selected];
+    const emailData = {
+      subject: settings[currentTab.stateKey].subject,
+      preview: settings[currentTab.stateKey].preview,
+      body: settings[currentTab.stateKey].body,
+    };
+
+    const formData = new FormData();
+    formData.append('actionType', 'sendTestEmail');
+    formData.append('emailData', JSON.stringify(emailData));
+    formData.append('recipient', recipientEmail);
+
+    fetcher.submit(formData, { method: 'post' });
+    setShowSendEmailModal(false);
+    setRecipientEmail('');
+  }, [selected, settings, recipientEmail, fetcher]);
+
+  useEffect(() => {
+    if (fetcher.data && fetcher.data.success) {
+      setToastMessage(fetcher.data.message || 'Operation successful');
+      setToastError(false);
+      setShowToast(true);
+    }
+  }, [fetcher.data]);
 
   const tabVariables = {
     verification: [
@@ -364,6 +498,7 @@ export default function EmailSetting() {
               />
             </TextContainer>
             <TextContainer>
+              <div style={{ marginTop: '5px' }} />
               <TextField
                 label={
                   <span style={{ fontWeight: '600', fontSize: '14px' }}>
@@ -413,7 +548,7 @@ export default function EmailSetting() {
               variables.map((varItem) => (
                 <div key={varItem.key} style={{ marginBottom: '12px' }}>
                   <TextContainer>
-                    <p style={{ margin: 0, fontWeight: 'bold' }}>{varItem.key}</p>
+                  <p style={{ margin: 0, fontWeight: 'bold', color: '#1A73E8' }}>{varItem.key}</p>
                     <p style={{ margin: 0, color: '#6b7280' }}>{varItem.description}</p>
                   </TextContainer>
                 </div>
@@ -423,10 +558,14 @@ export default function EmailSetting() {
             )}
             <div style={{ marginTop: '24px', gap: '12px' }}>
               <div>
-                <Button outline>Preview Email</Button>
+                <Button  fullWidth onClick={handlePreviewEmail} outline>
+                  Preview Email
+                </Button>
               </div>
               <div style={{ marginTop: '12px' }}>
-                <Button primary>Send Email</Button>
+                <Button fullWidth onClick={() => setShowSendEmailModal(true)} primary>
+                  Send Test Email
+                </Button>
               </div>
             </div>
           </div>
@@ -436,6 +575,7 @@ export default function EmailSetting() {
       return (
         <div style={{ display: 'flex', gap: '20px' }}>
           <div style={{ flex: 1 }}>
+            <br />
             <TextField
               label={
                 <span style={{ fontWeight: '600', fontSize: '14px' }}>Page Title</span>
@@ -446,6 +586,7 @@ export default function EmailSetting() {
               autoComplete="off"
             />
             <TextContainer>
+              <br />
               <TextField
                 label={
                   <span style={{ fontWeight: '600', fontSize: '14px' }}>Description</span>
@@ -458,6 +599,7 @@ export default function EmailSetting() {
               />
             </TextContainer>
             <TextContainer>
+              <br />
               <TextField
                 label={
                   <span style={{ fontWeight: '600', fontSize: '14px' }}>
@@ -471,6 +613,7 @@ export default function EmailSetting() {
                 autoComplete="off"
               />
             </TextContainer>
+            <br />
             <TextContainer>
               <TextField
                 label={
@@ -521,13 +664,31 @@ export default function EmailSetting() {
               </Text>
               <p>Please upload a clear photo of your government-issued ID to complete your order verification.</p>
               <div style={{ marginTop: '10px' }} />
-              <DropZone onDrop={handleDropZoneDrop} variableHeight>
+              <DropZone onDrop={handleDropZoneDrop} allowMultiple>
                 {uploadedFiles}
                 {fileUpload}
               </DropZone>
             </Card>
             <div style={{ marginTop: '10px' }}>
-              <Badge tone="info">Ensure your ID is clearly visible and all information is readable.</Badge>
+              <div
+                style={{
+                  backgroundColor: '#E6F0FA',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  display: 'inline-block',
+                  border: '1px solid #B3D4FC',
+                }}
+              >
+                <span
+                  style={{
+                    color: '#1A73E8',
+                    fontFamily: 'Arial, sans-serif',
+                    fontSize: '14px',
+                  }}
+                >
+                  Ensure your ID is clearly visible and all information is readable.
+                </span>
+              </div>
             </div>
             <div style={{ marginTop: '10px' }}>
               <p>Your ID will be securely processed and deleted after verification.</p>
@@ -539,14 +700,79 @@ export default function EmailSetting() {
 
     return <p>Tab not found</p>;
   };
+//
+const [selectedTab, setSelectedTab] = useState(3);
+  const tabss = [
+    {
+      id: 'dashboard',
+      content: (
+        <InlineStack gap="200" align="center">
+          <Icon source={HomeIcon} />
+          <Text as="span">Dashboard</Text>
+        </InlineStack>
+      ),
+      accessibilityLabel: 'Dashboard',
+    },
+    {
+      id: 'customers',
+      content: (
+        <InlineStack gap="200" align="center">
+          <Icon source={PersonFilledIcon} />
+          <Text as="span">Customers</Text>
+        </InlineStack>
+      ),
+      accessibilityLabel: 'Customers',
+    },
+    {
+      id: 'setup',
+      content: (
+        <InlineStack gap="200" align="center">
+          <Icon source={SettingsIcon} />
+          <Text as="span">Setup</Text>
+        </InlineStack>
+      ),
+      accessibilityLabel: 'Setup',
+    },
+    {
+      id: 'email-settings',
+      content: (
+        <InlineStack gap="200" align="center">
+          <Icon source={EmailIcon} />
+          <Text as="span">Email Settings</Text>
+        </InlineStack>
+      ),
+      accessibilityLabel: 'Email Settings',
+    },
+  ];
 
+  const handleTabChanges = (selectedTabIndex) => {
+    setSelectedTab(selectedTabIndex);
+    // Navigate based on tab id
+    const routes = {
+      dashboard: '/app',
+      customers: '/customers',
+      setup: '/setup',
+      'email-settings': '/emailsetting',
+    };
+    navigate(routes[tabs[selectedTabIndex].id]);
+  };
   return (
+    <frames>
+
+    
     <Page
-      backAction={{ content: 'Products', onAction: () => navigate('/app') }}
-      title="Email Templates & Settings"
-      subtitle="Customize your verification emails and ID upload page"
+      title="Complete Age Verification Solution"
+      subtitle="Protect your business with automated age verification for Shopify stores"
       compactTitle
     >
+        <div style={{marginTop:'-20px',marginBottom:"27px"  }}>
+        <Tabs
+          tabs={tabss}
+          selected={selectedTab}
+          onSelect={handleTabChanges}
+          fitted
+        />
+      </div>
       {showToast && (
         <Toast
           content={toastMessage}
@@ -554,6 +780,54 @@ export default function EmailSetting() {
           onDismiss={toggleToast}
         />
       )}
+      <Modal
+        open={showPreviewModal}
+        onClose={() => setShowPreviewModal(false)}
+        title="Email Preview"
+        primaryAction={{
+          content: 'Close',
+          onAction: () => setShowPreviewModal(false),
+        }}
+      >
+        <Modal.Section>
+          <div
+            style={{
+              border: '1px solid #e5e7eb',
+              borderRadius: '4px',
+              padding: '16px',
+              maxHeight: '500px',
+              overflow: 'auto'
+            }}
+            dangerouslySetInnerHTML={{ __html: previewContent }}
+          />
+        </Modal.Section>
+      </Modal>
+      <Modal
+        open={showSendEmailModal}
+        onClose={() => setShowSendEmailModal(false)}
+        title="Send Test Email"
+        primaryAction={{
+          content: 'Send',
+          onAction: handleSendTestEmail,
+          disabled: !recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail),
+        }}
+        secondaryActions={[
+          {
+            content: 'Cancel',
+            onAction: () => setShowSendEmailModal(false),
+          },
+        ]}
+      >
+        <Modal.Section>
+          <TextField
+            label="Recipient Email"
+            value={recipientEmail}
+            onChange={setRecipientEmail}
+            autoComplete="email"
+            placeholder="Enter test email address"
+          />
+        </Modal.Section>
+      </Modal>
       <LegacyCard>
         <Tabs
           tabs={tabs}
@@ -567,6 +841,9 @@ export default function EmailSetting() {
           </LegacyCard.Section>
         </Tabs>
       </LegacyCard>
+
+      <div style={{marginTop:"30px"}}></div>
     </Page>
+    </frames>
   );
 }

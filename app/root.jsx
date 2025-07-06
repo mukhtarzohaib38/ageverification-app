@@ -5,7 +5,7 @@ import {
   Scripts,
   ScrollRestoration,
 } from "@remix-run/react";
-import { AppProvider } from "@shopify/polaris";
+import { AppProvider, Frame } from "@shopify/polaris";
 import "@shopify/polaris/build/esm/styles.css"; // Required for Polaris styles
 
 // Minimal English translations
@@ -42,7 +42,9 @@ export default function App() {
       </head>
       <body>
         <AppProvider i18n={i18n}>
+          <Frame>
           <Outlet />
+          </Frame>
         </AppProvider>
         <ScrollRestoration />
         <Scripts />
